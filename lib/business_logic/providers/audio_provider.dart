@@ -7,7 +7,7 @@ class AudioProvider with ChangeNotifier {
   String? _errorMessage;
 
   // Audio state
-  bool _isRecording = false;
+  bool _isStreaming = false;
   double _volume = 1.0;
   double _audioLevel = 0.0;
 
@@ -27,9 +27,9 @@ class AudioProvider with ChangeNotifier {
         notifyListeners();
       });
 
-      // Listen to recording state changes
-      _audioService.recordingStateStream.listen((isRecording) {
-        _isRecording = isRecording;
+      // Listen to streaming state changes
+      _audioService.streamingStateStream.listen((isStreaming) {
+        _isStreaming = isStreaming;
         notifyListeners();
       });
     } catch (e) {
@@ -39,7 +39,7 @@ class AudioProvider with ChangeNotifier {
     }
   }
 
-  Future<void> toggleRecording() async {
+  Future<void> toggleStreaming() async {
     try {
       _errorMessage = null;
 
@@ -47,16 +47,16 @@ class AudioProvider with ChangeNotifier {
         await _initialize();
       }
 
-      if (_isRecording) {
-        await _audioService.stopRecording();
+      if (_isStreaming) {
+        await _audioService.stopAudioStreaming();
       } else {
-        await _audioService.startRecording();
+        await _audioService.startAudioStreaming();
       }
 
       notifyListeners();
     } catch (e) {
-      _errorMessage = 'Recording error: $e';
-      debugPrint('Error toggling recording: $e');
+      _errorMessage = 'Audio streaming error: $e';
+      debugPrint('Error toggling audio streaming: $e');
       notifyListeners();
     }
   }
@@ -71,32 +71,6 @@ class AudioProvider with ChangeNotifier {
     _volume = volume.clamp(0.0, 1.0);
     _audioService.setVolume(_volume);
     notifyListeners();
-  }
-
-  Future<void> playRecording() async {
-    try {
-      _errorMessage = null;
-
-      if (!_isInitialized) await _initialize();
-      await _audioService.playRecording();
-      notifyListeners();
-    } catch (e) {
-      _errorMessage = 'Playback error: $e';
-      debugPrint('Error playing recording: $e');
-      notifyListeners();
-    }
-  }
-
-  Future<void> stopPlayback() async {
-    try {
-      if (!_isInitialized) await _initialize();
-      await _audioService.stopPlayback();
-      notifyListeners();
-    } catch (e) {
-      _errorMessage = 'Error stopping playback: $e';
-      debugPrint('Error stopping playback: $e');
-      notifyListeners();
-    }
   }
 
   Future<void> resetAudio() async {
@@ -121,7 +95,7 @@ class AudioProvider with ChangeNotifier {
   }
 
   // Getters
-  bool get isRecording => _isRecording;
+  bool get isStreaming => _isStreaming;
   double get volume => _volume;
   double get audioLevel => _audioLevel;
   bool get isInitialized => _isInitialized;

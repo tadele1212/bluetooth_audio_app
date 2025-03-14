@@ -82,7 +82,7 @@ class _HomeScreenState extends State<HomeScreen>
                     padding: const EdgeInsets.all(16.0),
                     child: WaveformDisplay(
                       audioLevel: audioProvider.audioLevel,
-                      isRecording: audioProvider.isRecording,
+                      isRecording: audioProvider.isStreaming,
                       isVisible: _currentIndex == 0,
                     ),
                   ),
@@ -91,19 +91,25 @@ class _HomeScreenState extends State<HomeScreen>
               const SizedBox(height: 16),
 
               // Volume adjustment slider
-              Text('Volume', style: Theme.of(context).textTheme.titleMedium),
+              Text(
+                'Amplification Level',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Adjust volume to amplify sounds through your Bluetooth device',
+                style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+              ),
               VolumeSlider(
                 volume: audioProvider.volume,
                 onVolumeChanged: audioProvider.setVolume,
               ),
               const SizedBox(height: 24),
 
-              // Audio recording controls
+              // Audio controls
               AudioControls(
-                isRecording: audioProvider.isRecording,
-                onRecordingToggled: audioProvider.toggleRecording,
-                onPlayRecording: audioProvider.playRecording,
-                onStopPlayback: audioProvider.stopPlayback,
+                isStreaming: audioProvider.isStreaming,
+                onStreamingToggled: audioProvider.toggleStreaming,
                 onResetAudio: audioProvider.resetAudio,
                 errorMessage: audioProvider.errorMessage,
               ),

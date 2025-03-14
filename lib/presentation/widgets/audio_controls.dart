@@ -1,19 +1,15 @@
 import 'package:flutter/material.dart';
 
 class AudioControls extends StatelessWidget {
-  final bool isRecording;
-  final VoidCallback onRecordingToggled;
-  final VoidCallback onPlayRecording;
-  final VoidCallback onStopPlayback;
+  final bool isStreaming;
+  final VoidCallback onStreamingToggled;
   final VoidCallback? onResetAudio;
   final String? errorMessage;
 
   const AudioControls({
     super.key,
-    required this.isRecording,
-    required this.onRecordingToggled,
-    required this.onPlayRecording,
-    required this.onStopPlayback,
+    required this.isStreaming,
+    required this.onStreamingToggled,
     this.onResetAudio,
     this.errorMessage,
   });
@@ -78,44 +74,145 @@ class AudioControls extends StatelessWidget {
           const SizedBox(height: 12),
         ],
 
-        // Recording button
-        ElevatedButton.icon(
-          onPressed: onRecordingToggled,
-          icon: Icon(
-            isRecording ? Icons.stop : Icons.mic,
-            color: isRecording ? Colors.red : Colors.white,
+        // Hearing aid mode banner
+        if (isStreaming) ...[
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.green.shade50,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.green.shade200),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.hearing, color: Colors.green, size: 24),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Hearing Aid Active',
+                        style: TextStyle(
+                          color: Colors.green.shade700,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Microphone audio is being streamed to your Bluetooth device',
+                        style: TextStyle(color: Colors.green.shade800),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
-          label: Text(isRecording ? 'Stop Recording' : 'Start Recording'),
+          const SizedBox(height: 12),
+        ],
+
+        // Streaming button
+        ElevatedButton.icon(
+          onPressed: onStreamingToggled,
+          icon: Icon(
+            isStreaming ? Icons.hearing_disabled : Icons.hearing,
+            color: isStreaming ? Colors.red : Colors.white,
+            size: 28,
+          ),
+          label: Text(
+            isStreaming ? 'Stop Hearing Aid' : 'Start Hearing Aid',
+            style: const TextStyle(fontSize: 16),
+          ),
           style: ElevatedButton.styleFrom(
             backgroundColor:
-                isRecording ? Colors.white : Theme.of(context).primaryColor,
-            foregroundColor: isRecording ? Colors.red : Colors.white,
-            minimumSize: const Size(double.infinity, 50),
+                isStreaming ? Colors.white : Theme.of(context).primaryColor,
+            foregroundColor: isStreaming ? Colors.red : Colors.white,
+            minimumSize: const Size(double.infinity, 60),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side:
+                  isStreaming
+                      ? const BorderSide(color: Colors.red, width: 2)
+                      : BorderSide.none,
+            ),
           ),
         ),
-        const SizedBox(height: 12),
 
-        // Playback controls
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          children: [
-            Expanded(
-              child: OutlinedButton.icon(
-                onPressed: onPlayRecording,
-                icon: const Icon(Icons.play_arrow),
-                label: const Text('Play Recording'),
-              ),
+        // Usage instructions
+        if (!isStreaming) ...[
+          const SizedBox(height: 16),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.blue.shade50,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.blue.shade200),
             ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: OutlinedButton.icon(
-                onPressed: onStopPlayback,
-                icon: const Icon(Icons.stop),
-                label: const Text('Stop Playback'),
-              ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'How to use:',
+                  style: TextStyle(
+                    color: Colors.blue.shade700,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      Icons.looks_one,
+                      color: Colors.blue.shade700,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 8),
+                    const Expanded(
+                      child: Text(
+                        'Connect your Bluetooth earbuds or hearing device',
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      Icons.looks_two,
+                      color: Colors.blue.shade700,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 8),
+                    const Expanded(
+                      child: Text(
+                        'Adjust the volume slider to your preferred level',
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(Icons.looks_3, color: Colors.blue.shade700, size: 20),
+                    const SizedBox(width: 8),
+                    const Expanded(
+                      child: Text(
+                        'Press "Start Hearing Aid" to begin streaming audio',
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
 
         // Reset button if needed
         if (onResetAudio != null && errorMessage == null) ...[

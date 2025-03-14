@@ -39,6 +39,7 @@ dependencies:
   flutter_sound: ^9.2.13
   permission_handler: ^11.1.0
   path_provider: ^2.1.1
+  audio_session: ^0.1.16  # For better audio routing
   
   # Bluetooth connectivity
   flutter_blue_plus: ^1.31.13
