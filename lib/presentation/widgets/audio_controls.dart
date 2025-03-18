@@ -3,14 +3,12 @@ import 'package:flutter/material.dart';
 class AudioControls extends StatelessWidget {
   final bool isStreaming;
   final VoidCallback onStreamingToggled;
-  final VoidCallback? onResetAudio;
   final String? errorMessage;
 
   const AudioControls({
     super.key,
     required this.isStreaming,
     required this.onStreamingToggled,
-    this.onResetAudio,
     this.errorMessage,
   });
 
@@ -48,19 +46,6 @@ class AudioControls extends StatelessWidget {
                         ),
                       ),
                     ),
-                    if (onResetAudio != null)
-                      TextButton.icon(
-                        onPressed: onResetAudio,
-                        icon: const Icon(Icons.refresh, size: 16),
-                        label: const Text('Reset'),
-                        style: TextButton.styleFrom(
-                          foregroundColor: Colors.red.shade700,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
-                        ),
-                      ),
                   ],
                 ),
                 const SizedBox(height: 4),
@@ -210,19 +195,6 @@ class AudioControls extends StatelessWidget {
                   ],
                 ),
               ],
-            ),
-          ),
-        ],
-
-        // Reset button if needed
-        if (onResetAudio != null && errorMessage == null) ...[
-          const SizedBox(height: 16),
-          OutlinedButton.icon(
-            onPressed: onResetAudio,
-            icon: const Icon(Icons.refresh),
-            label: const Text('Reset Audio System'),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: Colors.grey.shade700,
             ),
           ),
         ],
