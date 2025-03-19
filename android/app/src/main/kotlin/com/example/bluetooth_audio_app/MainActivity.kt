@@ -22,6 +22,7 @@ import kotlin.concurrent.thread
 class MainActivity: FlutterActivity() {
     private val CHANNEL = "com.example.bluetooth_audio_app/audio"
     private lateinit var audioManager: AudioManager
+    private lateinit var audioHandler: AudioHandler
     
     // Audio loopback components
     private var isAudioLoopbackRunning = AtomicBoolean(false)
@@ -36,6 +37,8 @@ class MainActivity: FlutterActivity() {
 
         // Set up audio manager
         audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+
+        audioHandler = AudioHandler(this)
 
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
             when (call.method) {
@@ -70,19 +73,26 @@ class MainActivity: FlutterActivity() {
                     result.success(devices)
                 }
                 "startAudioLoopback" -> {
-                    val gain = call.argument<Double>("gain")?.toFloat() ?: 1.0f
-                    audioGain = gain
-                    val success = startAudioLoopback()
-                    result.success(success)
+                    val gain = call.argument<Double>("gain") ?: 1.0
+                    audioHandler.setVolume(gain)
+                    audioHandler.startAudioLoopback(result)
                 }
                 "stopAudioLoopback" -> {
-                    stopAudioLoopback()
-                    result.success(true)
+                    audioHandler.stopAudioLoopback()
+                    result.success(null)
                 }
                 "setAudioGain" -> {
-                    val gain = call.argument<Double>("gain")?.toFloat() ?: 1.0f
-                    audioGain = gain
-                    result.success(true)
+                    val gain = call.argument<Double>("gain") ?: 1.0
+                    audioHandler.setVolume(gain)
+                    result.success(null)
+                }
+                "getOptimalBufferConfig" -> {
+                    result.success(audioHandler.getOptimalBufferConfig())
+                }
+                "enableLowLatencyMode" -> {
+                    val enable = call.argument<Boolean>("enable") ?: true
+                    audioHandler.enableLowLatencyMode(enable)
+                    result.success(null)
                 }
                 else -> {
                     result.notImplemented()

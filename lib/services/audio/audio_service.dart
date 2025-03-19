@@ -18,6 +18,12 @@ class AudioService {
   String? _tempFilePath;
   bool _useRecorderForVisualization = true;
 
+  // Performance tracking
+  final Stopwatch _latencyStopwatch = Stopwatch();
+  int _bufferUnderruns = 0;
+  int _bufferOverruns = 0;
+  DateTime? _lastAudioProcessTime;
+
   // Method channel for native audio control
   static const MethodChannel _audioChannel = MethodChannel(
     'com.example.bluetooth_audio_app/audio',
@@ -117,158 +123,184 @@ class AudioService {
       _audioSession = await AudioSession.instance;
     }
 
-    // Configure with options ideal for a hearing aid application
+    // Configure for ultra-low latency
     final configuration = AudioSessionConfiguration(
-      // Allow audio from other apps to mix with our audio (like notifications)
+      // iOS configuration
+      avAudioSessionCategory: AVAudioSessionCategory.playAndRecord,
+      avAudioSessionCategoryOptions:
+          AVAudioSessionCategoryOptions.allowBluetooth |
+          AVAudioSessionCategoryOptions.defaultToSpeaker |
+          AVAudioSessionCategoryOptions.mixWithOthers,
+      avAudioSessionMode: AVAudioSessionMode.voiceChat,
+
+      // Android configuration
       androidAudioAttributes: const AndroidAudioAttributes(
         contentType: AndroidAudioContentType.speech,
         usage: AndroidAudioUsage.voiceCommunication,
+        // Remove unsupported flags but keep low latency settings
       ),
-      // Request audio focus but allow for mixing with other audio
-      androidAudioFocusGainType: AndroidAudioFocusGainType.gain,
-      // We're both playing and recording audio
-      avAudioSessionCategory: AVAudioSessionCategory.playAndRecord,
-      // Allow Bluetooth and make sure audio is routed appropriately
-      avAudioSessionCategoryOptions:
-          AVAudioSessionCategoryOptions.allowBluetooth |
-          AVAudioSessionCategoryOptions.defaultToSpeaker,
-      // Optimize for voice
-      avAudioSessionMode: AVAudioSessionMode.voiceChat,
+      androidAudioFocusGainType:
+          AndroidAudioFocusGainType.gainTransientExclusive,
+      androidWillPauseWhenDucked: true,
     );
 
     try {
       await _audioSession!.configure(configuration);
-      debugPrint('Audio session configured for hearing aid operation');
 
-      // Listen for audio interruptions (e.g., calls)
+      // Set optimal buffer configuration
+      try {
+        final Map<dynamic, dynamic>? bufferConfig = await _audioChannel
+            .invokeMethod('getOptimalBufferConfig');
+        if (bufferConfig != null) {
+          debugPrint('🎯 Optimal buffer config: $bufferConfig');
+
+          // Apply the optimal buffer configuration
+          await _audioChannel.invokeMethod('setAudioConfig', {
+            'sampleRate': 44100,
+            'bufferSize':
+                bufferConfig['minBuffer'] ??
+                512, // Default to 512 if not specified
+            'lowLatencyMode': true,
+          });
+        }
+      } catch (e) {
+        debugPrint('⚠️ Error setting optimal buffer size: $e');
+      }
+
+      debugPrint('✅ Audio session configured for low latency');
+
+      // Listen for route changes
+      _audioSession!.devicesChangedEventStream.listen((event) {
+        debugPrint('🔄 Audio route changed:');
+        debugPrint(
+          '   Added devices: ${event.devicesAdded.map((d) => d.name).join(', ')}',
+        );
+        debugPrint(
+          '   Removed devices: ${event.devicesRemoved.map((d) => d.name).join(', ')}',
+        );
+      });
+
+      // Listen for interruptions
       _audioSession!.interruptionEventStream.listen((event) {
-        debugPrint('Audio interruption: ${event.type}, begin: ${event.begin}');
+        debugPrint(
+          '⚡ Audio interruption: ${event.begin ? 'began' : 'ended'} (type: ${event.type})',
+        );
         if (event.begin) {
-          // Interruption began, pause our audio
+          // Interruption began
           if (_isStreaming) {
             stopAudioStreaming();
           }
-        } else {
-          // Interruption ended, optionally resume our audio
-          // For a hearing aid, we might want to auto-resume
-          if (event.type == AudioInterruptionType.pause) {
-            // This was a transient interruption like a phone call ending
-            startAudioStreaming();
-          }
         }
       });
-
-      // Listen for route changes (headphones, Bluetooth connected/disconnected)
-      _audioSession!.devicesChangedEventStream.listen((event) {
-        debugPrint('Audio devices changed:');
-        debugPrint(
-          'Devices added: ${event.devicesAdded.map((d) => d.name).join(', ')}',
-        );
-        debugPrint(
-          'Devices removed: ${event.devicesRemoved.map((d) => d.name).join(', ')}',
-        );
-
-        // Log all connected devices when changes occur
-        _logConnectedAudioDevices();
-      });
     } catch (e) {
-      debugPrint('Failed to configure audio session: $e');
+      debugPrint('❌ Failed to configure audio session: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> _updateAudioRouting() async {
+    try {
+      final devices = await _audioChannel.invokeMethod('getConnectedDevices');
+      debugPrint('🎧 Connected audio devices: $devices');
+
+      // Check for low-latency capable devices
+      final hasLowLatencyDevice =
+          await _audioChannel.invokeMethod<bool>('hasLowLatencyDevice') ??
+          false;
+
+      if (hasLowLatencyDevice) {
+        debugPrint('✨ Low-latency audio device detected');
+        await _audioChannel.invokeMethod('enableLowLatencyMode', {
+          'enable': true,
+        });
+      }
+    } catch (e) {
+      debugPrint('⚠️ Error updating audio routing: $e');
     }
   }
 
   // Start streaming audio (acts as a hearing aid)
   Future<void> startAudioStreaming() async {
     try {
-      // Make sure we're initialized
       if (!_isRecorderInitialized && _useRecorderForVisualization) {
-        debugPrint('Initializing audio system before streaming');
         await initialize();
       }
 
-      // Don't try to start if already streaming
-      if (_isStreaming) {
-        debugPrint('Already streaming audio, ignoring start request');
-        return;
-      }
+      if (_isStreaming) return;
 
-      debugPrint('Starting audio streaming (hearing aid mode)');
+      // Start performance monitoring
+      _latencyStopwatch.start();
+      _lastAudioProcessTime = DateTime.now();
 
-      // Ensure we have audio session active
+      // Ensure audio session is active
       if (_audioSession != null) {
-        final bool active = await _audioSession!.setActive(true);
-        if (!active) {
-          debugPrint('Warning: Could not activate audio session');
-        }
+        await _audioSession!.setActive(true);
       }
 
-      // Enable Bluetooth SCO explicitly
-      await _enableBluetoothSco(true);
+      // Configure and start native audio loopback
+      final success =
+          await _audioChannel.invokeMethod<bool>('startAudioLoopback', {
+            'gain': _volume,
+            'lowLatencyMode': true,
+            'bufferSize': 512, // Minimum buffer size for low latency
+            'sampleRate': 44100,
+          }) ??
+          false;
 
-      // Start the native audio loopback
-      bool success = false;
-      try {
-        success =
-            await _audioChannel.invokeMethod<bool>('startAudioLoopback', {
-              'gain': _volume,
-            }) ??
-            false;
-      } catch (e) {
-        debugPrint('Error starting native audio loopback: $e');
-        throw Exception('Failed to start native audio loopback: $e');
-      }
+      if (!success) throw Exception('Failed to start native audio loopback');
 
-      if (!success) {
-        throw Exception('Failed to start native audio loopback');
-      }
-
-      debugPrint('Native audio loopback started successfully');
-
-      // Start recorder for visualization only if needed
       if (_useRecorderForVisualization) {
-        try {
-          await _recorder.startRecorder(
-            toFile: _tempFilePath,
-            codec: Codec.pcm16,
-            sampleRate: 44100,
-            numChannels: 1,
+        // Set minimum possible subscription duration for visualization
+        await _recorder.setSubscriptionDuration(
+          const Duration(milliseconds: 10),
+        );
+
+        await _recorder.startRecorder(
+          toFile: _tempFilePath,
+          codec: Codec.pcm16,
+          sampleRate: 44100,
+          numChannels: 1,
+        );
+
+        _recorderSubscription = _recorder.onProgress!.listen((event) {
+          final dbLevel = event.decibels ?? 0.0;
+          final normalizedLevel = (dbLevel + 160) / 160;
+
+          // Monitor performance
+          if (_latencyStopwatch.elapsedMilliseconds >= 1000) {
+            _logPerformanceMetrics();
+          }
+
+          // Track buffer issues
+          final duration = event.duration?.inMilliseconds ?? 0;
+          if (duration > 15) {
+            // Reduced threshold for stricter monitoring
+            _bufferOverruns++;
+          } else if (duration < 5) {
+            _bufferUnderruns++;
+          }
+
+          _audioLevelController.add(
+            (normalizedLevel * _volume).clamp(0.0, 1.0),
           );
-          debugPrint('Recorder started for visualization');
-
-          // Listen for audio levels for visualization
-          _recorderSubscription = _recorder.onProgress!.listen((event) {
-            final dbLevel = event.decibels ?? 0.0;
-            // Convert dB level to a normalized value between 0 and 1
-            final normalizedLevel =
-                (dbLevel + 160) / 160; // Assuming dB range of -160 to 0
-
-            // Apply volume adjustment to the normalized level for UI display
-            _audioLevelController.add(
-              (normalizedLevel * _volume).clamp(0.0, 1.0),
-            );
-          });
-        } catch (e) {
-          debugPrint('Error starting recorder for visualization: $e');
-          // Not critical for hearing aid functionality, so continue
-          _useRecorderForVisualization = false;
-
-          // Just emit a constant value for the waveform
-          _audioLevelController.add(_volume * 0.5);
-        }
-      } else {
-        // If not using recorder, just emit a constant value for the waveform
-        _audioLevelController.add(_volume * 0.5);
+        });
       }
 
       _isStreaming = true;
-      _streamingStateController.add(_isStreaming);
+      _streamingStateController.add(true);
 
-      debugPrint('Audio streaming started successfully');
+      debugPrint('''
+🚀 Low-latency audio streaming started
+📊 Configuration:
+   • Buffer Size: 512 samples
+   • Sample Rate: 44.1 kHz
+   • Target Latency: <20ms
+   • Visualization Update: 10ms
+''');
     } catch (e) {
+      debugPrint('❌ Error starting audio streaming: $e');
       _isStreaming = false;
-      _streamingStateController.add(_isStreaming);
-      debugPrint('Error starting audio streaming: $e');
-      // Try to reset if there was an error
-      await _tryResetAudioSystem();
+      _streamingStateController.add(false);
       rethrow;
     }
   }
@@ -427,4 +459,23 @@ class AudioService {
 
   bool get isStreaming => _isStreaming;
   double get volume => _volume;
+
+  void _logPerformanceMetrics() {
+    final now = DateTime.now();
+    final processingLatency = _latencyStopwatch.elapsedMilliseconds;
+
+    debugPrint('\n📊 AUDIO PERFORMANCE METRICS 📊');
+    debugPrint('⏱️ Processing Latency: ${processingLatency}ms');
+    debugPrint('📈 Buffer Underruns: $_bufferUnderruns');
+    debugPrint('📉 Buffer Overruns: $_bufferOverruns');
+
+    if (_lastAudioProcessTime != null) {
+      final timeSinceLastProcess =
+          now.difference(_lastAudioProcessTime!).inMilliseconds;
+      debugPrint('⌛ Time between processes: ${timeSinceLastProcess}ms');
+    }
+
+    _lastAudioProcessTime = now;
+    _latencyStopwatch.reset();
+  }
 }
